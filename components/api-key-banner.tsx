@@ -1,15 +1,25 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
+
+function subscribe() {
+  return () => {};
+}
+
+function hostedSnapshot() {
+  const host = window.location.hostname;
+  return host !== "localhost" && host !== "127.0.0.1";
+}
 
 export function ApiKeyBanner() {
   const [missing, setMissing] = useState(false);
+  const hosted = useSyncExternalStore(subscribe, hostedSnapshot, () => true);
 
   useEffect(() => {
     void fetch("/api/config")
       .then((res) => res.json())
-      .then((body: { hasAnthropicKey?: boolean }) => {
-        setMissing(!body.hasAnthropicKey);
+      .then((body: { hasAiKey?: boolean; hasAnthropicKey?: boolean }) => {
+        setMissing(!(body.hasAiKey ?? body.hasAnthropicKey));
       })
       .catch(() => setMissing(true));
   }, []);
@@ -19,9 +29,9 @@ export function ApiKeyBanner() {
   return (
     <div className="border-b border-border bg-secondary px-4 py-3 text-secondary-foreground">
       <p className="mx-auto max-w-5xl text-sm">
-        Add your API key to generate weeks. Create <span className="font-medium">.env.local</span> with{" "}
-        <span className="font-medium">ANTHROPIC_API_KEY</span> and restart the dev server. The rest of
-        the cookbook still works.
+        {hosted
+          ? "Meal writing is not on this host yet. The rest of the cookbook still works."
+          : "Set a server AI key to write weeks. In .env.local use AI_API_KEY plus optional AI_PROVIDER (anthropic, openai, openrouter, groq, or google), then restart. Visitors never paste a key."}
       </p>
     </div>
   );

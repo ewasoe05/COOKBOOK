@@ -22,8 +22,8 @@ export function DemoView() {
     <div className="flex max-w-xl flex-col gap-6">
       <h1 className="font-display text-4xl tracking-display">Try a kitchen</h1>
       <p className="text-muted-foreground">
-        Pre-fills onboarding so you can walk the app without typing. Generated weeks still need an API
-        key. The sample chapter below is labeled demo data.
+        Pre-fills onboarding so you can walk the app without typing. If this host has an AI key,
+        writing a week just works. The sample chapter below is labeled demo data.
       </p>
       {(Object.keys(DEMO_PROFILES) as Array<keyof typeof DEMO_PROFILES>).map((key) => (
         <Link key={key} href={`/?demo=${key}`} className={cn(buttonVariants({ size: "touch" }), "w-full")}>

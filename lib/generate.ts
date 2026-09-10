@@ -1,15 +1,9 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { ClaudeWeekSchema, RecipeSchema, type Profile, type Recipe, type Week } from "@/lib/schemas";
 import { computeTargets, mealMacroWindows } from "@/lib/nutrition";
 import { buildGroceryList } from "@/lib/grocery";
 import { verifyRecipe, type UsdaCache } from "@/lib/usda";
+import { completeJson, hasAiKey } from "@/lib/ai";
 import { z } from "zod";
-
-const MODEL = "claude-sonnet-4-6";
-
-function client(): Anthropic {
-  return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-}
 
 function voice(intent: Profile["intent"]): string {
   if (intent === "performance") {
@@ -63,20 +57,12 @@ function extractJson(text: string): unknown {
   const trimmed = text.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
   const start = trimmed.indexOf("{");
   const end = trimmed.lastIndexOf("}");
-  if (start === -1 || end === -1) throw new Error("Claude returned no JSON object");
+  if (start === -1 || end === -1) throw new Error("The model returned no JSON object");
   return JSON.parse(trimmed.slice(start, end + 1));
 }
 
 async function ask(system: string, user: string): Promise<string> {
-  const message = await client().messages.create({
-    model: MODEL,
-    max_tokens: 16000,
-    system,
-    messages: [{ role: "user", content: user }],
-  });
-  const block = message.content.find((item) => item.type === "text");
-  if (!block || block.type !== "text") throw new Error("Empty Claude response");
-  return block.text;
+  return completeJson(system, user, 16000);
 }
 
 export async function generateWeekFromClaude(
@@ -89,8 +75,8 @@ export async function generateWeekFromClaude(
     usdaCache?: UsdaCache;
   },
 ): Promise<{ week: Week; recipes: Recipe[]; usdaCache: UsdaCache }> {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    throw new Error("Missing ANTHROPIC_API_KEY");
+  if (!hasAiKey()) {
+    throw new Error("AI is not configured on the server");
   }
   const targets = computeTargets(profile);
   const windows = mealMacroWindows(targets);

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { MealTypeSchema, ProfileSchema } from "@/lib/schemas";
 import { regenerateMealFromClaude } from "@/lib/generate";
 import { UsdaCacheSchema } from "@/lib/usda";
+import { hasAiKey } from "@/lib/ai";
 import { z } from "zod";
 
 export const runtime = "nodejs";
@@ -18,9 +19,9 @@ const BodySchema = z.object({
 });
 
 export async function POST(request: Request) {
-  if (!process.env.ANTHROPIC_API_KEY) {
+  if (!hasAiKey()) {
     return NextResponse.json(
-      { error: "Add your API key", code: "missing_key" },
+      { error: "Meal writing is not configured yet.", code: "missing_key" },
       { status: 400 },
     );
   }
