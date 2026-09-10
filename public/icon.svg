@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Adaptive Cookbook">
+  <rect width="512" height="512" rx="96" fill="#B4572F"/>
+  <ellipse cx="256" cy="278" rx="148" ry="108" fill="#F8F2E7"/>
+  <path d="M132 250c18-70 248-70 266 0" fill="none" stroke="#B4572F" stroke-width="22" stroke-linecap="round"/>
+  <ellipse cx="256" cy="236" rx="86" ry="22" fill="#B4572F"/>
+</svg>
