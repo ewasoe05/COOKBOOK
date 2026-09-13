@@ -1,0 +1,23 @@
+---
+description: Adaptive Cookbook design system — read before any UI work
+globs: **/*.{tsx,ts,css,md}
+alwaysApply: true
+---
+
+# Adaptive Cookbook — design contract
+
+Before writing or changing UI, read [DESIGN.md](../../DESIGN.md). It is authoritative and overrides shadcn, Tailwind UI, and any “clean modern SaaS” default.
+
+Non-negotiables:
+
+- Fraunces (display, WONK off except wordmark) + Source Sans 3 (body). Never Inter.
+- Terracotta-on-cream OKLCH tokens from `app/globals.css`. Never indigo/violet/purple. Never blue gradients.
+- Light mode default. Dark is optional warm espresso, not gray.
+- `--radius: 0.625rem`. No `rounded-2xl` everywhere. Pills only for chips.
+- No arbitrary Tailwind brackets. No hex in components.
+- Editorial layout: left-aligned hero, whitespace over card-grids, unequal emphasis.
+- Lucide only. No emoji icons.
+- Skeletons, never spinners. Motion 120 / 200 / 280ms with the documented easings.
+- Cook Mode: large type, inline quantities in steps, multiple timers, 44px targets.
+
+If a generated screen drifts (Inter, purple, centered badge hero, accent-stripe cards, glass, identical icon-top trios), stop and correct it against DESIGN.md before adding more screens.
