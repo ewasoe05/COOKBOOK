@@ -69,6 +69,7 @@ export function OnboardingWizard({ initial }: { initial?: Partial<Profile> }) {
   const setProfile = useCookbookStore((s) => s.setProfile);
   const [step, setStep] = useState(0);
   const [showNumbers, setShowNumbers] = useState(initial?.showNumbers ?? false);
+  const [finishError, setFinishError] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft>(() => ({
     ...empty,
     ...profileToDraft(initial),
@@ -88,8 +89,17 @@ export function OnboardingWizard({ initial }: { initial?: Partial<Profile> }) {
 
   async function finish() {
     if (!parsed.success) return;
-    await setProfile(parsed.data);
-    router.push("/cookbook?generate=1");
+    setFinishError(null);
+    try {
+      await setProfile(parsed.data);
+      router.push("/cookbook?generate=1");
+    } catch (error) {
+      setFinishError(
+        error instanceof Error && error.message
+          ? error.message
+          : "Could not save this plan on the device. Try again.",
+      );
+    }
   }
 
   return (
@@ -120,27 +130,37 @@ export function OnboardingWizard({ initial }: { initial?: Partial<Profile> }) {
       {step === 3 ? <TasteStep draft={draft} setDraft={setDraft} /> : null}
       {step === 4 ? <KitchenStep draft={draft} setDraft={setDraft} /> : null}
       {step === 5 ? <HouseholdStep draft={draft} setDraft={setDraft} /> : null}
-      {step === 6 && targets ? (
-        <div className="flex flex-col gap-4">
-          <h1 className="font-display text-4xl tracking-display">Your kitchen, tuned.</h1>
-          {showNumbers || draft.intent === "performance" ? (
-            <p className="measure text-lg leading-body">
-              {targets.rationale} About {targets.proteinG}g protein, {targets.carbsG}g carbs,{" "}
-              {targets.fatG}g fat.
+      {step === 6 ? (
+        targets ? (
+          <div className="flex flex-col gap-4">
+            <h1 className="font-display text-4xl tracking-display">Your kitchen, tuned.</h1>
+            {showNumbers || draft.intent === "performance" ? (
+              <p className="measure text-lg leading-body">
+                {targets.rationale} About {targets.proteinG}g protein, {targets.carbsG}g carbs,{" "}
+                {targets.fatG}g fat.
+              </p>
+            ) : (
+              <p className="measure text-lg leading-body">{targets.rationale}</p>
+            )}
+            {draft.intent !== "performance" ? (
+              <button
+                type="button"
+                className="self-start text-sm text-primary underline-offset-4 hover:underline"
+                onClick={() => setShowNumbers((v) => !v)}
+              >
+                {showNumbers ? "Hide the numbers" : "Show me the numbers"}
+              </button>
+            ) : null}
+          </div>
+        ) : (
+          <div className="flex flex-col gap-4">
+            <h1 className="font-display text-4xl tracking-display">This plan needs a tweak.</h1>
+            <p className="measure text-lg leading-body text-muted-foreground">
+              Age must be 13–100, height and weight have to be real numbers, and household size 1–12.
+              Go back and check those before we write the first week.
             </p>
-          ) : (
-            <p className="measure text-lg leading-body">{targets.rationale}</p>
-          )}
-          {draft.intent !== "performance" ? (
-            <button
-              type="button"
-              className="self-start text-sm text-primary underline-offset-4 hover:underline"
-              onClick={() => setShowNumbers((v) => !v)}
-            >
-              {showNumbers ? "Hide the numbers" : "Show me the numbers"}
-            </button>
-          ) : null}
-        </div>
+          </div>
+        )
       ) : null}
 
       <div className="flex gap-3">
@@ -159,9 +179,12 @@ export function OnboardingWizard({ initial }: { initial?: Partial<Profile> }) {
             Continue
           </Button>
         ) : (
-          <Button type="button" size="touch" onClick={() => void finish()} disabled={!parsed.success}>
-            Write my first week
-          </Button>
+          <div className="flex flex-col gap-3">
+            {finishError ? <p className="measure text-destructive">{finishError}</p> : null}
+            <Button type="button" size="touch" onClick={() => void finish()} disabled={!parsed.success}>
+              Write my first week
+            </Button>
+          </div>
         )}
       </div>
     </div>

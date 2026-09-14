@@ -79,12 +79,17 @@ export function CookbookHome() {
       </div>
 
       {error ? (
-        <p className="text-destructive">
-          {error}{" "}
-          <button type="button" className="underline" onClick={() => setError(null)}>
-            dismiss
-          </button>
-        </p>
+        <div className="flex flex-col gap-3">
+          <p className="measure text-destructive">{error}</p>
+          <div className="flex flex-wrap gap-3">
+            <Button type="button" size="touch" onClick={() => void generate()}>
+              Try again
+            </Button>
+            <Button type="button" variant="outline" size="touch" onClick={() => setError(null)}>
+              Dismiss
+            </Button>
+          </div>
+        </div>
       ) : null}
 
       {tab === "week" ? (

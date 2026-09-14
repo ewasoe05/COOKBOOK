@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import type { Recipe, Week } from "@/lib/schemas";
 import type { UsdaCache } from "@/lib/usda";
+import { friendlyGenerateError, readGenerateResponse, trimUsdaCache } from "@/lib/http";
 import { useCookbookStore } from "@/lib/store";
 
 const MESSAGES = [
@@ -18,17 +19,6 @@ function isAbortError(error: unknown): boolean {
   return error instanceof DOMException
     ? error.name === "AbortError"
     : error instanceof Error && error.name === "AbortError";
-}
-
-async function readApiError(res: Response, fallback: string): Promise<string> {
-  const text = await res.text();
-  try {
-    const body = JSON.parse(text) as { error?: string };
-    if (typeof body.error === "string" && body.error.trim()) return body.error;
-  } catch {
-    if (res.status === 504) return "Writing timed out on the host. Try again.";
-  }
-  return fallback;
 }
 
 export async function requestWeekGeneration(): Promise<void> {
@@ -57,28 +47,21 @@ export async function requestWeekGeneration(): Promise<void> {
         disliked,
         pantry: store.pantry,
         weekNumber: store.weeks.length + 1,
-        usdaCache: store.usdaCache,
+        usdaCache: trimUsdaCache(store.usdaCache),
       }),
     });
-    const text = await res.text();
-    let body: { error?: string; week?: unknown; recipes?: unknown; usdaCache?: UsdaCache } = {};
-    try {
-      body = JSON.parse(text) as typeof body;
-    } catch {
-      throw new Error(
-        res.status === 504 ? "Writing timed out on the host. Try again." : "Could not write this week",
-      );
-    }
-    if (!res.ok) throw new Error(body.error || "Could not write this week");
+    const body = await readGenerateResponse<{
+      week: Week;
+      recipes: Recipe[];
+      usdaCache?: UsdaCache;
+    }>(res);
     if (!body.week || !body.recipes) throw new Error("Could not write this week");
-    await store.addWeek(body.week as Week, body.recipes as Recipe[], body.usdaCache ?? {});
+    await store.addWeek(body.week, body.recipes, body.usdaCache ?? {});
   } catch (err) {
     store.setGenerateError(
       isAbortError(err)
         ? "Writing took too long. Try again."
-        : err instanceof Error
-          ? err.message
-          : "Could not write this week",
+        : friendlyGenerateError(err, "Could not write this week"),
     );
   } finally {
     window.clearInterval(timer);
@@ -110,19 +93,16 @@ export async function requestMealSwap(recipe: Recipe): Promise<void> {
         pantry: store.pantry,
         liked,
         disliked,
-        usdaCache: store.usdaCache,
+        usdaCache: trimUsdaCache(store.usdaCache),
       }),
     });
-    if (!res.ok) throw new Error(await readApiError(res, "Could not swap this meal"));
-    const body = (await res.json()) as { recipe: Recipe; usdaCache?: UsdaCache };
+    const body = await readGenerateResponse<{ recipe: Recipe; usdaCache?: UsdaCache }>(res);
     await store.replaceRecipe(recipe.id, body.recipe, body.usdaCache ?? {});
   } catch (err) {
     store.setGenerateError(
       isAbortError(err)
         ? "That swap took too long. Try again."
-        : err instanceof Error
-          ? err.message
-          : "Could not swap this meal",
+        : friendlyGenerateError(err, "Could not swap this meal"),
     );
   } finally {
     window.clearTimeout(timeout);

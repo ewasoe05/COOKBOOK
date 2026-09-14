@@ -8,6 +8,7 @@ import {
 import { amountToGrams, perServing, scaleNutrition, sumNutrition } from "@/lib/units";
 
 const SEARCH = "https://api.nal.usda.gov/fdc/v1/foods/search";
+const LOOKUP_TIMEOUT_MS = 8000;
 
 const NUTRIENT_IDS = {
   calories: [1008, 2048],
@@ -30,6 +31,8 @@ export const UsdaCacheSchema = z.record(z.string(), UsdaCacheEntrySchema);
 
 export type UsdaCacheEntry = z.infer<typeof UsdaCacheEntrySchema>;
 export type UsdaCache = z.infer<typeof UsdaCacheSchema>;
+
+const inflight = new Map<string, Promise<UsdaCacheEntry | null>>();
 
 export function cacheKey(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, " ");
@@ -84,7 +87,7 @@ async function searchFoods(query: string, dataType: string): Promise<UsdaCacheEn
   try {
     const res = await fetch(url.toString(), {
       cache: "no-store",
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(LOOKUP_TIMEOUT_MS),
     });
     if (!res.ok) return null;
     const body = (await res.json()) as {
@@ -109,10 +112,26 @@ export async function lookupIngredient(
 ): Promise<UsdaCacheEntry | null> {
   const key = cacheKey(name);
   if (cache[key]) return cache[key];
-  const preferred = await searchFoods(name, "Foundation,SR Legacy");
-  const entry = preferred ?? (await searchFoods(name, "Branded"));
-  if (entry) cache[key] = entry;
-  return entry;
+
+  const pending = inflight.get(key);
+  if (pending) {
+    const shared = await pending;
+    if (shared) cache[key] = shared;
+    return shared;
+  }
+
+  const request = (async () => {
+    const preferred = await searchFoods(name, "Foundation,SR Legacy");
+    return preferred ?? (await searchFoods(name, "Branded"));
+  })();
+  inflight.set(key, request);
+  try {
+    const entry = await request;
+    if (entry) cache[key] = entry;
+    return entry;
+  } finally {
+    inflight.delete(key);
+  }
 }
 
 export async function verifyRecipe(
@@ -127,21 +146,24 @@ export async function verifyRecipe(
     const parts: NutritionPerServing[] = [];
     let anyMiss = false;
 
-    const lookups = await Promise.all(
-      working.ingredients.map((ingredient) => lookupIngredient(ingredient.name, cache)),
+    const lookedUp = await Promise.all(
+      working.ingredients.map(async (ingredient) => {
+        const entry = await lookupIngredient(ingredient.name, cache);
+        const grams = amountToGrams(ingredient.amount, ingredient.unit, ingredient.name);
+        return { ingredient, entry, grams };
+      }),
     );
+
     const nextIngredients: Ingredient[] = [];
-    working.ingredients.forEach((ingredient, index) => {
-      const entry = lookups[index];
-      const grams = amountToGrams(ingredient.amount, ingredient.unit, ingredient.name);
+    for (const { ingredient, entry, grams } of lookedUp) {
       if (!entry || grams === null) {
         anyMiss = true;
         nextIngredients.push(ingredient);
-        return;
+        continue;
       }
       nextIngredients.push({ ...ingredient, usdaFdcId: entry.fdcId });
       parts.push(scaleNutrition(entry.per100g, grams));
-    });
+    }
 
     working = { ...working, ingredients: nextIngredients };
     if (anyMiss || parts.length === 0) {

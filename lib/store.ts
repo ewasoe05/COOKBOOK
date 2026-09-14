@@ -46,8 +46,12 @@ export const useCookbookStore = create<Store>((set, get) => ({
   setBusy: (busy, message) =>
     set({ busy, generateMessage: message ?? get().generateMessage }),
   hydrate: async () => {
-    const snapshot = await loadSnapshot();
-    set({ ...snapshot, hydrated: true });
+    try {
+      const snapshot = await loadSnapshot();
+      set({ ...snapshot, hydrated: true });
+    } catch {
+      set({ ...emptySnapshot(), hydrated: true });
+    }
   },
   setProfile: async (profile) => {
     await saveProfile(profile);
