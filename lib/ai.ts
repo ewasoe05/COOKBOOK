@@ -17,10 +17,17 @@ export type AiConfig = {
   baseUrl: string | null;
 };
 
+export type ClaudeFamily = "haiku" | "sonnet";
+
+const CLAUDE_SONNET = "claude-sonnet-4-6";
+const CLAUDE_HAIKU = "claude-haiku-4-5";
+const OPENROUTER_SONNET = "anthropic/claude-sonnet-4.6";
+const OPENROUTER_HAIKU = "anthropic/claude-haiku-4.5";
+
 const DEFAULT_MODELS: Record<AiProvider, string> = {
-  anthropic: "claude-sonnet-4-6",
+  anthropic: CLAUDE_SONNET,
   openai: "gpt-4.1",
-  openrouter: "anthropic/claude-sonnet-4.6",
+  openrouter: OPENROUTER_SONNET,
   groq: "llama-3.3-70b-versatile",
   google: "gemini-2.5-flash",
 };
@@ -53,6 +60,43 @@ function parseProvider(value: string | undefined): AiProvider | null {
   if (raw === "openai-compatible" || raw === "compatible") return "openai";
   if ((AI_PROVIDERS as readonly string[]).includes(raw)) return raw as AiProvider;
   return null;
+}
+
+function looksLikeClaudeId(value: string): boolean {
+  return /(?:^|\/)claude-(?:haiku|sonnet)-/.test(value);
+}
+
+/** Claude API may only use Haiku or Sonnet — never Opus, Fable, or other families. */
+export function classifyClaudeFamily(model: string): ClaudeFamily | null {
+  const raw = model.trim().toLowerCase();
+  if (!raw) return null;
+  if (/\b(opus|fable)\b/.test(raw)) return null;
+  if (/\bhaiku\b/.test(raw)) return "haiku";
+  if (/\bsonnet\b/.test(raw)) return "sonnet";
+  return null;
+}
+
+export function pickAllowedClaudeModel(
+  requested: string | undefined,
+  destination: "anthropic" | "openrouter",
+): string {
+  const family = requested ? classifyClaudeFamily(requested) : "sonnet";
+  const trimmed = requested?.trim() ?? "";
+  if (family === "haiku") {
+    if (destination === "openrouter") {
+      return looksLikeClaudeId(trimmed) && trimmed.includes("/")
+        ? trimmed
+        : OPENROUTER_HAIKU;
+    }
+    return looksLikeClaudeId(trimmed) && !trimmed.includes("/") ? trimmed : CLAUDE_HAIKU;
+  }
+  if (family === "sonnet" && trimmed && looksLikeClaudeId(trimmed)) {
+    if (destination === "openrouter") {
+      return trimmed.includes("/") ? trimmed : OPENROUTER_SONNET;
+    }
+    return trimmed.includes("/") ? CLAUDE_SONNET : trimmed;
+  }
+  return destination === "openrouter" ? OPENROUTER_SONNET : CLAUDE_SONNET;
 }
 
 export function detectProvider(env: Env = process.env): AiProvider | null {
@@ -91,10 +135,18 @@ export function resolveAiConfig(source?: Env): AiConfig | null {
   ].filter(Boolean));
   if (!apiKey) return null;
 
+  const requestedModel = env.AI_MODEL?.trim();
+  const model =
+    provider === "anthropic"
+      ? pickAllowedClaudeModel(requestedModel, "anthropic")
+      : provider === "openrouter"
+        ? pickAllowedClaudeModel(requestedModel, "openrouter")
+        : requestedModel || DEFAULT_MODELS[provider];
+
   return {
     provider,
     apiKey,
-    model: env.AI_MODEL?.trim() || DEFAULT_MODELS[provider],
+    model,
     baseUrl: env.AI_BASE_URL?.trim() || DEFAULT_BASE[provider],
   };
 }
@@ -118,8 +170,9 @@ export async function completeJson(system: string, user: string, maxTokens = 160
 }
 
 async function askAnthropic(config: AiConfig, system: string, user: string, maxTokens: number): Promise<string> {
+  const model = pickAllowedClaudeModel(config.model, "anthropic");
   const message = await new Anthropic({ apiKey: config.apiKey }).messages.create({
-    model: config.model,
+    model,
     max_tokens: maxTokens,
     system,
     messages: [{ role: "user", content: user }],
@@ -144,11 +197,15 @@ async function askOpenAiCompatible(
     headers["http-referer"] = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
     headers["x-title"] = "Adaptive Cookbook";
   }
+  const model =
+    config.provider === "openrouter"
+      ? pickAllowedClaudeModel(config.model, "openrouter")
+      : config.model;
   const res = await fetch(`${base}/chat/completions`, {
     method: "POST",
     headers,
     body: JSON.stringify({
-      model: config.model,
+      model,
       temperature: 0.4,
       max_tokens: maxTokens,
       messages: [

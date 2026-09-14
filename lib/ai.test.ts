@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { detectProvider, hasAiKey, resolveAiConfig } from "@/lib/ai";
+import {
+  classifyClaudeFamily,
+  detectProvider,
+  hasAiKey,
+  pickAllowedClaudeModel,
+  resolveAiConfig,
+} from "@/lib/ai";
 
 describe("AI provider config", () => {
   it("returns null when no keys are set", () => {
@@ -59,5 +65,30 @@ describe("AI provider config", () => {
       ANTHROPIC_API_KEY: "specific",
     });
     expect(config?.apiKey).toBe("generic");
+  });
+
+  it("allows Haiku or Sonnet and rejects larger Claude families", () => {
+    expect(classifyClaudeFamily("claude-haiku-4-5")).toBe("haiku");
+    expect(classifyClaudeFamily("claude-sonnet-5")).toBe("sonnet");
+    expect(classifyClaudeFamily("claude-opus-5")).toBeNull();
+    expect(classifyClaudeFamily("claude-fable-5-1")).toBeNull();
+    expect(pickAllowedClaudeModel("claude-opus-5", "anthropic")).toBe("claude-sonnet-4-6");
+    expect(pickAllowedClaudeModel("haiku", "anthropic")).toBe("claude-haiku-4-5");
+    expect(pickAllowedClaudeModel("claude-sonnet-5", "anthropic")).toBe("claude-sonnet-5");
+  });
+
+  it("clamps Anthropic AI_MODEL to Haiku or Sonnet", () => {
+    expect(resolveAiConfig({
+      ANTHROPIC_API_KEY: "sk-ant-test",
+      AI_MODEL: "claude-opus-5",
+    })?.model).toBe("claude-sonnet-4-6");
+    expect(resolveAiConfig({
+      ANTHROPIC_API_KEY: "sk-ant-test",
+      AI_MODEL: "claude-haiku-4-5",
+    })?.model).toBe("claude-haiku-4-5");
+    expect(resolveAiConfig({
+      OPENROUTER_API_KEY: "or",
+      AI_MODEL: "anthropic/claude-opus-4.6",
+    })?.model).toBe("anthropic/claude-sonnet-4.6");
   });
 });
