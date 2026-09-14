@@ -26,3 +26,6 @@ Judgment calls made while implementing CURSOR_BUILD.md under the Adaptive Cookbo
 - **Grocery volume merge:** tsp/tbsp/cup of the same ingredient are converted to one line.
 - **Lighthouse (mobile, production `next start`):** performance 88, accessibility 100 on `/`. Dev-server Lighthouse is slower and was not used for the bar.
 - **Everywhere / App Store:** ship as a hosted Next.js PWA first (Vercel + Add to Home Screen). An App Store binary should be a Capacitor/WKWebView shell of that HTTPS origin so the AI key never ships in the client. Native wrappers stay deferred until there is a live domain and an Apple Developer account.
+- **Accounts:** Better Auth (email/password + optional Google) with Drizzle/Neon. No email verification in this pass (no SMTP). Guest onboarding still works on one device. Cooking `Profile` stays body/goals; the account email is separate.
+- **Cloud snapshot:** one JSON row per user (`cookbook_snapshots`). USDA cache and onboarding drafts stay on device. Last-write-wins on `updatedAt`. Sign-out clears IndexedDB so a shared computer does not leak the cookbook. Reset deletes the cloud row when signed in.
+- **Auth optional at runtime:** missing `DATABASE_URL` / `BETTER_AUTH_SECRET` leaves the app device-only. Google is hidden unless both OAuth env vars are set.

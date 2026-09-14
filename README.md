@@ -2,7 +2,7 @@
 
 A personal cookbook web app. It calculates nutrition targets from your body and goals, writes a week of meals with Claude, checks them against USDA FoodData Central, and turns them into a grocery list. Design is warm and editorial (Fraunces + Source Sans 3, terracotta on cream). See [DESIGN.md](./DESIGN.md) and [CURSOR_BUILD.md](./CURSOR_BUILD.md).
 
-Cookbook data lives on the device (IndexedDB). AI keys stay on the server. People using the site never paste a key.
+Cookbook data lives on the device (IndexedDB) and, after sign-in, in Postgres so the same account restores it on a phone or computer. AI keys stay on the server. People using the site never paste a key.
 
 ## Run locally
 
@@ -30,6 +30,8 @@ Open [http://localhost:3000](http://localhost:3000).
 
 Without a server AI key the app still runs: onboarding, profile, and saved data work. Generation shows a banner instead of crashing. Once the key is set on the host, visitors write weeks with no setup.
 
+Cross-device sign-in is optional. Without `DATABASE_URL` and `BETTER_AUTH_SECRET` the app stays on this device. With those set, email/password works. Google also needs `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, with callback `{BETTER_AUTH_URL}/api/auth/callback/google`. Apply [`drizzle/0000_init.sql`](drizzle/0000_init.sql) on Neon (or `npm run db:push`).
+
 Hidden demo: [/demo](http://localhost:3000/demo)
 
 ## Deploy (available everywhere)
@@ -43,7 +45,12 @@ This is a Next.js app with server routes, so it needs a Node host — [Vercel](h
    - `AI_MODEL` / `AI_BASE_URL` — optional
    - `USDA_API_KEY` — optional
    - `NEXT_PUBLIC_SITE_URL` — `https://your-domain.vercel.app` (or your custom domain)
-3. Deploy. Open that `https://` URL on any phone or computer. Users do not enter an API key.
+   - `DATABASE_URL` — Neon (or other Postgres) connection string, for accounts
+   - `BETTER_AUTH_SECRET` — at least 32 characters
+   - `BETTER_AUTH_URL` — same public origin as the site
+   - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` — optional Google sign-in
+3. Run the SQL in `drizzle/0000_init.sql` on that database.
+4. Deploy. Open that `https://` URL on any phone or computer. Users do not enter an API key. Sign in to keep the cookbook across devices.
 
 On iPhone: Safari → Share → **Add to Home Screen**. The app is a PWA (standalone, terracotta icon). Some cook-mode extras (vibration) still do not exist on iOS; timers do.
 
@@ -63,7 +70,8 @@ Until that wrapper exists, Add to Home Screen is the iPhone install path. Native
 ## Scripts
 
 - `npm run dev`
-- `npm run test` — nutrition engine, grocery merge, unit conversions
+- `npm run test` — nutrition engine, grocery merge, unit conversions, cloud merge
 - `npm run lint`
 - `npm run build`
 - `npm run icons` — regenerate PWA PNG icons
+- `npm run db:push` — push Drizzle schema to `DATABASE_URL`

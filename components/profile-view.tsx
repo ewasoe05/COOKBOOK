@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { computeTargets } from "@/lib/nutrition";
 import { exportSnapshot } from "@/lib/storage";
 import { parseSnapshot, useCookbookStore } from "@/lib/store";
-import { Button } from "@/components/ui/button";
+import { authClient } from "@/lib/auth-client";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { cmToImperial, imperialToCm, kgToLb, lbToKg } from "@/lib/display";
@@ -30,6 +32,9 @@ export function ProfileView() {
   const usdaCache = useCookbookStore((s) => s.usdaCache);
   const resetAll = useCookbookStore((s) => s.resetAll);
   const importAll = useCookbookStore((s) => s.importAll);
+  const signOutLocal = useCookbookStore((s) => s.signOutLocal);
+  const session = authClient.useSession();
+  const [authEnabled, setAuthEnabled] = useState<boolean | null>(null);
   const [weight, setWeight] = useState("");
   const [energy, setEnergy] = useState(3);
   const [hunger, setHunger] = useState(3);
@@ -43,6 +48,15 @@ export function ProfileView() {
   useEffect(() => {
     if (!profile) router.replace("/");
   }, [profile, router]);
+
+  useEffect(() => {
+    void fetch("/api/config")
+      .then((res) => res.json())
+      .then((body: { authEnabled?: boolean }) => {
+        setAuthEnabled(Boolean(body.authEnabled));
+      })
+      .catch(() => setAuthEnabled(false));
+  }, []);
 
   if (!profile || !targets) {
     return <p className="text-muted-foreground">Opening onboarding…</p>;
@@ -66,6 +80,46 @@ export function ProfileView() {
           Changing body or goal numbers recalculates targets. Your next week will use these.
         </p>
       </header>
+
+      <section className="flex flex-col gap-3">
+        <h2 className="font-display text-2xl">Account</h2>
+        {session.isPending || authEnabled === null ? (
+          <div className="h-11 w-full max-w-md animate-pulse bg-muted" aria-hidden />
+        ) : session.data ? (
+          <>
+            <p className="measure text-muted-foreground">
+              Signed in as {session.data.user.email}. This cookbook follows you to another phone or
+              computer.
+            </p>
+            <Button
+              variant="outline"
+              size="touch"
+              onClick={() => {
+                void (async () => {
+                  await signOutLocal();
+                  await authClient.signOut();
+                  router.replace("/");
+                })();
+              }}
+            >
+              Sign out
+            </Button>
+          </>
+        ) : authEnabled ? (
+          <>
+            <p className="measure text-muted-foreground">
+              Sign in to keep this cookbook on your phone and computer.
+            </p>
+            <Link href="/sign-in" className={buttonVariants({ size: "touch" })}>
+              Sign in
+            </Link>
+          </>
+        ) : (
+          <p className="measure text-muted-foreground">
+            Sign-in needs a database on the host. Until then, export a copy if you switch devices.
+          </p>
+        )}
+      </section>
 
       <section className="flex flex-col gap-3">
         <h2 className="font-display text-2xl">This week&apos;s targets</h2>
