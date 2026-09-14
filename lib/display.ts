@@ -24,3 +24,7 @@ export function formatDuration(minutes: number): string {
 export function isCookModePath(pathname: string): boolean {
   return /\/cook\/?$/.test(pathname);
 }
+
+export function isAuthPath(pathname: string): boolean {
+  return pathname === "/sign-in";
+}

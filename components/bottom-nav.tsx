@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { BookOpen, ShoppingBasket, User } from "lucide-react";
-import { isCookModePath } from "@/lib/display";
+import { isAuthPath, isCookModePath } from "@/lib/display";
 
 const ITEMS = [
   { href: "/cookbook", label: "Cookbook", icon: BookOpen },
@@ -13,7 +13,7 @@ const ITEMS = [
 
 export function BottomNav() {
   const pathname = usePathname();
-  if (pathname === "/" || isCookModePath(pathname)) return null;
+  if (pathname === "/" || isAuthPath(pathname) || isCookModePath(pathname)) return null;
 
   return (
     <nav
