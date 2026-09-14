@@ -26,12 +26,14 @@ export function CookbookHome() {
     if (!profile) router.replace("/");
   }, [profile, router]);
 
+  const shouldGenerate = search.get("generate") === "1";
+
   useEffect(() => {
-    if (search.get("generate") !== "1" || weeks.length > 0 || !profile) return;
-    if (typeof window !== "undefined" && sessionStorage.getItem("ac.autogen") === "1") return;
+    if (!shouldGenerate || weeks.length > 0 || !profile) return;
+    if (sessionStorage.getItem("ac.autogen") === "1") return;
     sessionStorage.setItem("ac.autogen", "1");
     void generate();
-  }, [search, weeks.length, profile, generate]);
+  }, [shouldGenerate, weeks.length, profile, generate]);
 
   const dayRecipes = useMemo(() => {
     if (!current) return [];

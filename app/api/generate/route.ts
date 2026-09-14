@@ -6,6 +6,7 @@ import { hasAiKey } from "@/lib/ai";
 import { z } from "zod";
 
 export const runtime = "nodejs";
+export const maxDuration = 300;
 
 const BodySchema = z.object({
   profile: ProfileSchema,

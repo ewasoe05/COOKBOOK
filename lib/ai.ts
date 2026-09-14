@@ -160,18 +160,31 @@ export async function completeJson(system: string, user: string, maxTokens = 160
   if (!config) {
     throw new Error("AI is not configured on the server");
   }
-  if (config.provider === "anthropic") {
-    return askAnthropic(config, system, user, maxTokens);
+  try {
+    if (config.provider === "anthropic") {
+      return await askAnthropic(config, system, user, maxTokens);
+    }
+    if (config.provider === "google") {
+      return await askGoogle(config, system, user, maxTokens);
+    }
+    return await askOpenAiCompatible(config, system, user, maxTokens);
+  } catch (error) {
+    if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
+      throw new Error("The model took too long. Try again.");
+    }
+    throw error;
   }
-  if (config.provider === "google") {
-    return askGoogle(config, system, user, maxTokens);
-  }
-  return askOpenAiCompatible(config, system, user, maxTokens);
 }
+
+const AI_TIMEOUT_MS = 120_000;
 
 async function askAnthropic(config: AiConfig, system: string, user: string, maxTokens: number): Promise<string> {
   const model = pickAllowedClaudeModel(config.model, "anthropic");
-  const message = await new Anthropic({ apiKey: config.apiKey }).messages.create({
+  const message = await new Anthropic({
+    apiKey: config.apiKey,
+    timeout: AI_TIMEOUT_MS,
+    maxRetries: 0,
+  }).messages.create({
     model,
     max_tokens: maxTokens,
     system,
@@ -204,6 +217,7 @@ async function askOpenAiCompatible(
   const res = await fetch(`${base}/chat/completions`, {
     method: "POST",
     headers,
+    signal: AbortSignal.timeout(AI_TIMEOUT_MS),
     body: JSON.stringify({
       model,
       temperature: 0.4,
@@ -232,6 +246,7 @@ async function askGoogle(config: AiConfig, system: string, user: string, maxToke
   const res = await fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
+    signal: AbortSignal.timeout(AI_TIMEOUT_MS),
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: system }] },
       contents: [{ role: "user", parts: [{ text: user }] }],
