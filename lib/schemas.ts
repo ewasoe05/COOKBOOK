@@ -216,6 +216,17 @@ export const ClaudeWeekSchema = z.object({
   days: z.array(WeekDaySchema).length(7),
 });
 
+export const ClaudeDaySchema = z.object({
+  summary: z.string().min(1).optional(),
+  recipes: z.array(ClaudeRecipeSchema).min(3).max(6),
+  meals: z.array(
+    z.object({
+      mealType: z.string().min(1),
+      recipeId: z.string().min(1),
+    }),
+  ).min(3),
+});
+
 export type Intent = z.infer<typeof IntentSchema>;
 export type Sex = z.infer<typeof SexSchema>;
 export type Activity = z.infer<typeof ActivitySchema>;
@@ -230,3 +241,4 @@ export type CheckIn = z.infer<typeof CheckInSchema>;
 export type Ingredient = z.infer<typeof IngredientSchema>;
 export type NutritionPerServing = z.infer<typeof NutritionPerServingSchema>;
 export type ClaudeWeek = z.infer<typeof ClaudeWeekSchema>;
+export type ClaudeDay = z.infer<typeof ClaudeDaySchema>;

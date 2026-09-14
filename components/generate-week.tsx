@@ -3,17 +3,12 @@
 import { useEffect, useState } from "react";
 import type { Recipe, Week } from "@/lib/schemas";
 import type { UsdaCache } from "@/lib/usda";
+import { assembleWeek } from "@/lib/week";
 import { friendlyGenerateError, readGenerateResponse, trimUsdaCache } from "@/lib/http";
 import { useCookbookStore } from "@/lib/store";
 
-const MESSAGES = [
-  "Calculating your targets…",
-  "Writing the week's chapter…",
-  "Checking nutrition…",
-  "Building the grocery list…",
-];
-
-const GENERATE_TIMEOUT_MS = 150_000;
+const DAY_LABELS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const DAY_TIMEOUT_MS = 50_000;
 
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException
@@ -21,51 +16,108 @@ function isAbortError(error: unknown): boolean {
     : error instanceof Error && error.name === "AbortError";
 }
 
-export async function requestWeekGeneration(): Promise<void> {
-  const store = useCookbookStore.getState();
-  const profile = store.profile;
-  if (!profile) return;
-  store.setBusy(true, MESSAGES[0]);
-  store.setGenerateError(null);
-  let i = 0;
-  const timer = window.setInterval(() => {
-    i = (i + 1) % MESSAGES.length;
-    useCookbookStore.getState().setBusy(true, MESSAGES[i]);
-  }, 2800);
+type DayResult = {
+  recipes: Recipe[];
+  day: Week["days"][number];
+  summary?: string;
+  usdaCache?: UsdaCache;
+};
+
+async function requestOneDay(input: {
+  profile: NonNullable<ReturnType<typeof useCookbookStore.getState>["profile"]>;
+  liked: string[];
+  disliked: string[];
+  pantry: string[];
+  weekNumber: number;
+  weekId: string;
+  day: number;
+  previousTitles: string[];
+  usdaCache?: UsdaCache;
+}): Promise<DayResult> {
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), GENERATE_TIMEOUT_MS);
+  const timeout = window.setTimeout(() => controller.abort(), DAY_TIMEOUT_MS);
   try {
-    const liked = store.recipes.filter((r) => r.rating === "up").map((r) => r.title);
-    const disliked = store.recipes.filter((r) => r.rating === "down").map((r) => r.title);
     const res = await fetch("/api/generate", {
       method: "POST",
       headers: { "content-type": "application/json" },
       signal: controller.signal,
       body: JSON.stringify({
+        profile: input.profile,
+        liked: input.liked,
+        disliked: input.disliked,
+        pantry: input.pantry,
+        weekNumber: input.weekNumber,
+        weekId: input.weekId,
+        day: input.day,
+        previousTitles: input.previousTitles,
+        usdaCache: trimUsdaCache(input.usdaCache),
+      }),
+    });
+    const body = await readGenerateResponse<DayResult>(res);
+    if (!body.recipes?.length || !body.day) throw new Error("Could not write this day");
+    return body;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+export async function requestWeekGeneration(): Promise<void> {
+  const store = useCookbookStore.getState();
+  const profile = store.profile;
+  if (!profile) return;
+  store.setBusy(true, "Calculating your targets…");
+  store.setGenerateError(null);
+
+  const liked = store.recipes.filter((r) => r.rating === "up").map((r) => r.title);
+  const disliked = store.recipes.filter((r) => r.rating === "down").map((r) => r.title);
+  const weekId = crypto.randomUUID();
+  const createdAt = new Date().toISOString();
+  const weekNumber = store.weeks.length + 1;
+  const recipes: Recipe[] = [];
+  const days: Week["days"] = [];
+  let usdaCache: UsdaCache = { ...store.usdaCache };
+  let summary = "";
+
+  try {
+    for (let day = 0; day <= 6; day += 1) {
+      useCookbookStore
+        .getState()
+        .setBusy(true, `Writing ${DAY_LABELS[day]}… (${day + 1} of 7)`);
+      const result = await requestOneDay({
         profile,
         liked,
         disliked,
         pantry: store.pantry,
-        weekNumber: store.weeks.length + 1,
-        usdaCache: trimUsdaCache(store.usdaCache),
-      }),
+        weekNumber,
+        weekId,
+        day,
+        previousTitles: recipes.map((recipe) => recipe.title),
+        usdaCache,
+      });
+      recipes.push(...result.recipes);
+      days.push(result.day);
+      usdaCache = { ...usdaCache, ...(result.usdaCache ?? {}) };
+      if (result.summary) summary = result.summary;
+    }
+
+    const week = assembleWeek({
+      weekId,
+      weekNumber,
+      createdAt,
+      profile,
+      summary: summary || `Week ${weekNumber} of meals written for your kitchen.`,
+      days,
+      recipes,
+      pantry: store.pantry,
     });
-    const body = await readGenerateResponse<{
-      week: Week;
-      recipes: Recipe[];
-      usdaCache?: UsdaCache;
-    }>(res);
-    if (!body.week || !body.recipes) throw new Error("Could not write this week");
-    await store.addWeek(body.week, body.recipes, body.usdaCache ?? {});
+    await store.addWeek(week, recipes, usdaCache);
   } catch (err) {
     store.setGenerateError(
       isAbortError(err)
-        ? "Writing took too long. Try again."
+        ? "That day took too long. Try again — we write one day at a time."
         : friendlyGenerateError(err, "Could not write this week"),
     );
   } finally {
-    window.clearInterval(timer);
-    window.clearTimeout(timeout);
     useCookbookStore.getState().setBusy(false);
   }
 }
@@ -77,7 +129,7 @@ export async function requestMealSwap(recipe: Recipe): Promise<void> {
   store.setBusy(true, "Finding a different plate…");
   store.setGenerateError(null);
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), GENERATE_TIMEOUT_MS);
+  const timeout = window.setTimeout(() => controller.abort(), DAY_TIMEOUT_MS);
   try {
     const liked = store.recipes.filter((r) => r.rating === "up").map((r) => r.title);
     const disliked = store.recipes.filter((r) => r.rating === "down").map((r) => r.title);
@@ -142,7 +194,7 @@ export function GeneratingOverlay({ message }: { message: string }) {
         <p className="font-display text-2xl tracking-display">Writing your chapter</p>
         <p className="mt-3 text-muted-foreground">{message}</p>
         <p className="mt-2 text-sm text-muted-foreground">
-          {elapsed < 20 ? "This usually takes about a minute." : `Still writing… ${elapsed}s`}
+          {elapsed < 15 ? "One day at a time so the host can finish." : `Still writing… ${elapsed}s`}
         </p>
         <div className="mt-6 h-2 overflow-hidden bg-muted">
           <div className="h-2 w-1/2 animate-pulse bg-primary" />

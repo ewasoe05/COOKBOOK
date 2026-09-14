@@ -10,9 +10,26 @@ export function isNetworkFailure(message: string): boolean {
   );
 }
 
+export function isHostTimeout(message: string): boolean {
+  const lower = message.trim().toLowerCase();
+  return (
+    lower === "request timeout" ||
+    lower.includes("request timeout") ||
+    lower.includes("gateway timeout") ||
+    lower.includes("invocation timeout") ||
+    lower.includes("function timeout") ||
+    lower.includes("the model took too long") ||
+    /\b504\b/.test(message) ||
+    /timed out/.test(lower)
+  );
+}
+
 export function friendlyGenerateError(error: unknown, fallback: string): string {
   const message =
     error instanceof Error ? error.message : typeof error === "string" ? error : fallback;
+  if (isHostTimeout(message)) {
+    return "The host ran out of time on that day. Stay on this page and try again — we write one day at a time so it can finish.";
+  }
   if (isNetworkFailure(message)) {
     return "The connection dropped while writing this week. On a phone that often happens if the write takes a while or the screen locks. Stay on this page and try again.";
   }

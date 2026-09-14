@@ -23,6 +23,13 @@ describe("network error copy", () => {
       "Cook time exceeds max",
     );
   });
+
+  it("rewrites host request timeouts", () => {
+    expect(friendlyGenerateError(new Error("Request timeout"), "fallback")).toMatch(/one day at a time/i);
+    expect(friendlyGenerateError(new Error("Request failed (504)"), "fallback")).toMatch(
+      /one day at a time/i,
+    );
+  });
 });
 
 describe("generate response parsing", () => {

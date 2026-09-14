@@ -155,19 +155,34 @@ export function hasAiKey(source?: Env): boolean {
   return resolveAiConfig(source) !== null;
 }
 
-export async function completeJson(system: string, user: string, maxTokens = 16000): Promise<string> {
+export async function completeJson(
+  system: string,
+  user: string,
+  maxTokens = 16000,
+  options?: { fast?: boolean },
+): Promise<string> {
   const config = resolveAiConfig();
   if (!config) {
     throw new Error("AI is not configured on the server");
   }
+  const effective =
+    options?.fast && (config.provider === "anthropic" || config.provider === "openrouter")
+      ? {
+          ...config,
+          model: pickAllowedClaudeModel(
+            "haiku",
+            config.provider === "openrouter" ? "openrouter" : "anthropic",
+          ),
+        }
+      : config;
   try {
-    if (config.provider === "anthropic") {
-      return await askAnthropic(config, system, user, maxTokens);
+    if (effective.provider === "anthropic") {
+      return await askAnthropic(effective, system, user, maxTokens);
     }
-    if (config.provider === "google") {
-      return await askGoogle(config, system, user, maxTokens);
+    if (effective.provider === "google") {
+      return await askGoogle(effective, system, user, maxTokens);
     }
-    return await askOpenAiCompatible(config, system, user, maxTokens);
+    return await askOpenAiCompatible(effective, system, user, maxTokens);
   } catch (error) {
     if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
       throw new Error("The model took too long. Try again.");

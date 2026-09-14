@@ -7,7 +7,7 @@ import { streamNdjson } from "@/lib/http";
 import { z } from "zod";
 
 export const runtime = "nodejs";
-export const maxDuration = 300;
+export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
 const BodySchema = z.object({
