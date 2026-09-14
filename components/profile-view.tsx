@@ -7,6 +7,7 @@ import { exportSnapshot } from "@/lib/storage";
 import { parseSnapshot, useCookbookStore } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NumberField } from "@/components/number-field";
 import { Textarea } from "@/components/ui/textarea";
 import { cmToImperial, imperialToCm, kgToLb, lbToKg } from "@/lib/display";
 import {
@@ -81,40 +82,56 @@ export function ProfileView() {
         <h2 className="font-display text-2xl">Body and kitchen</h2>
         <label className="flex flex-col gap-2 text-sm">
           Age
-          <Input
+          <NumberField
             className="h-11"
-            type="number"
+            integer
             value={current.age}
-            onChange={(e) => patch({ age: Number(e.target.value) })}
+            onValueChange={(age) => {
+              if (age === null) return;
+              patch({ age });
+            }}
           />
         </label>
         {imperial ? (
           <div className="grid grid-cols-2 gap-3">
             <label className="flex flex-col gap-2 text-sm">
               Height (ft)
-              <Input
+              <NumberField
+                key="height-ft"
                 className="h-11"
-                type="number"
+                integer
                 value={feet}
-                onChange={(e) => patch({ heightCm: imperialToCm(Number(e.target.value), inches) })}
+                onValueChange={(next) => {
+                  if (next === null) return;
+                  patch({ heightCm: imperialToCm(next, inches) });
+                }}
               />
             </label>
             <label className="flex flex-col gap-2 text-sm">
               Height (in)
-              <Input
+              <NumberField
+                key="height-in"
                 className="h-11"
-                type="number"
+                integer
+                allowZero
                 value={inches}
-                onChange={(e) => patch({ heightCm: imperialToCm(feet, Number(e.target.value)) })}
+                onValueChange={(next) => {
+                  if (next === null) return;
+                  patch({ heightCm: imperialToCm(feet, next) });
+                }}
               />
             </label>
             <label className="col-span-2 flex flex-col gap-2 text-sm">
               Weight (lb)
-              <Input
+              <NumberField
+                key="weight-lb"
                 className="h-11"
-                type="number"
+                integer
                 value={kgToLb(current.weightKg)}
-                onChange={(e) => patch({ weightKg: lbToKg(Number(e.target.value)) })}
+                onValueChange={(next) => {
+                  if (next === null) return;
+                  patch({ weightKg: lbToKg(next) });
+                }}
               />
             </label>
           </div>
@@ -122,20 +139,27 @@ export function ProfileView() {
           <div className="grid grid-cols-2 gap-3">
             <label className="flex flex-col gap-2 text-sm">
               Height (cm)
-              <Input
+              <NumberField
+                key="height-cm"
                 className="h-11"
-                type="number"
+                integer
                 value={current.heightCm}
-                onChange={(e) => patch({ heightCm: Number(e.target.value) })}
+                onValueChange={(heightCm) => {
+                  if (heightCm === null) return;
+                  patch({ heightCm });
+                }}
               />
             </label>
             <label className="flex flex-col gap-2 text-sm">
               Weight (kg)
-              <Input
+              <NumberField
+                key="weight-kg"
                 className="h-11"
-                type="number"
                 value={current.weightKg}
-                onChange={(e) => patch({ weightKg: Number(e.target.value) })}
+                onValueChange={(weightKg) => {
+                  if (weightKg === null) return;
+                  patch({ weightKg });
+                }}
               />
             </label>
           </div>
@@ -202,13 +226,16 @@ export function ProfileView() {
         </label>
         <label className="flex flex-col gap-2 text-sm">
           People at the table
-          <Input
+          <NumberField
             className="h-11"
-            type="number"
+            integer
             min={1}
             max={12}
             value={current.householdSize}
-            onChange={(e) => patch({ householdSize: Number(e.target.value) })}
+            onValueChange={(householdSize) => {
+              if (householdSize === null) return;
+              patch({ householdSize });
+            }}
           />
         </label>
         <div className="flex flex-wrap gap-2">
