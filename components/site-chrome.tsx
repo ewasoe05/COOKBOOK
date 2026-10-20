@@ -3,7 +3,28 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { isCookModePath } from "@/lib/display";
+import { authClient } from "@/lib/auth-client";
+import { isAuthPath, isCookModePath } from "@/lib/display";
+
+function AuthHeaderLink() {
+  const pathname = usePathname();
+  const session = authClient.useSession();
+
+  if (isAuthPath(pathname)) return null;
+  if (session.isPending) {
+    return <div className="h-11 w-16 animate-pulse bg-muted" aria-hidden />;
+  }
+  if (session.data) return null;
+
+  return (
+    <Link
+      href="/sign-in"
+      className="inline-flex h-11 items-center rounded-md px-3 text-base hover:bg-muted"
+    >
+      Sign in
+    </Link>
+  );
+}
 
 export function SiteHeader() {
   const pathname = usePathname();
@@ -37,9 +58,11 @@ export function SiteHeader() {
           >
             Profile
           </Link>
+          <AuthHeaderLink />
           <ThemeToggle />
         </nav>
-        <div className="md:hidden">
+        <div className="flex items-center gap-1 md:hidden">
+          <AuthHeaderLink />
           <ThemeToggle />
         </div>
       </div>

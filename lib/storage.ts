@@ -17,6 +17,7 @@ const KEYS = {
   pantry: "adaptive-cookbook.pantry",
   usda: "adaptive-cookbook.usda",
   onboarding: "adaptive-cookbook.onboarding",
+  updatedAt: "adaptive-cookbook.updatedAt",
 } as const;
 
 export type CookbookSnapshot = {
@@ -96,6 +97,21 @@ export async function saveOnboardingDraft(draft: unknown): Promise<void> {
 export async function loadOnboardingDraft<T>(fallback: T): Promise<T> {
   const raw = await get(KEYS.onboarding);
   return (raw as T) ?? fallback;
+}
+
+export async function loadUpdatedAt(): Promise<string | null> {
+  const raw = await get(KEYS.updatedAt);
+  return typeof raw === "string" && raw.length > 0 ? raw : null;
+}
+
+export async function saveUpdatedAt(iso: string): Promise<void> {
+  await set(KEYS.updatedAt, iso);
+}
+
+export async function touchUpdatedAt(): Promise<string> {
+  const iso = new Date().toISOString();
+  await saveUpdatedAt(iso);
+  return iso;
 }
 
 export async function resetCookbook(): Promise<void> {

@@ -8,13 +8,18 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "icons": "node scripts/generate-icons.mjs"
+    "icons": "node scripts/generate-icons.mjs",
+    "db:push": "drizzle-kit push",
+    "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.125.0",
     "@base-ui/react": "^1.8.0",
+    "@neondatabase/serverless": "^1.1.0",
+    "better-auth": "^1.7.4",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.2.6",
+    "drizzle-orm": "^0.45.2",
     "idb-keyval": "^6.3.0",
     "lucide-react": "^1.44.0",
     "next": "16.3.4",
@@ -31,6 +36,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "drizzle-kit": "^0.31.10",
     "eslint": "^9",
     "eslint-config-next": "16.3.4",
     "tailwindcss": "^4",
