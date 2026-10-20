@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NumberField } from "@/components/number-field";
 import { computeTargets } from "@/lib/nutrition";
 import {
   EQUIPMENT_OPTIONS,
@@ -68,6 +69,7 @@ export function OnboardingWizard({ initial }: { initial?: Partial<Profile> }) {
   const setProfile = useCookbookStore((s) => s.setProfile);
   const [step, setStep] = useState(0);
   const [showNumbers, setShowNumbers] = useState(initial?.showNumbers ?? false);
+  const [finishError, setFinishError] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft>(() => ({
     ...empty,
     ...profileToDraft(initial),
@@ -87,8 +89,17 @@ export function OnboardingWizard({ initial }: { initial?: Partial<Profile> }) {
 
   async function finish() {
     if (!parsed.success) return;
-    await setProfile(parsed.data);
-    router.push("/cookbook?generate=1");
+    setFinishError(null);
+    try {
+      await setProfile(parsed.data);
+      router.push("/cookbook?generate=1");
+    } catch (error) {
+      setFinishError(
+        error instanceof Error && error.message
+          ? error.message
+          : "Could not save this plan on the device. Try again.",
+      );
+    }
   }
 
   return (
@@ -119,27 +130,37 @@ export function OnboardingWizard({ initial }: { initial?: Partial<Profile> }) {
       {step === 3 ? <TasteStep draft={draft} setDraft={setDraft} /> : null}
       {step === 4 ? <KitchenStep draft={draft} setDraft={setDraft} /> : null}
       {step === 5 ? <HouseholdStep draft={draft} setDraft={setDraft} /> : null}
-      {step === 6 && targets ? (
-        <div className="flex flex-col gap-4">
-          <h1 className="font-display text-4xl tracking-display">Your kitchen, tuned.</h1>
-          {showNumbers || draft.intent === "performance" ? (
-            <p className="measure text-lg leading-body">
-              {targets.rationale} About {targets.proteinG}g protein, {targets.carbsG}g carbs,{" "}
-              {targets.fatG}g fat.
+      {step === 6 ? (
+        targets ? (
+          <div className="flex flex-col gap-4">
+            <h1 className="font-display text-4xl tracking-display">Your kitchen, tuned.</h1>
+            {showNumbers || draft.intent === "performance" ? (
+              <p className="measure text-lg leading-body">
+                {targets.rationale} About {targets.proteinG}g protein, {targets.carbsG}g carbs,{" "}
+                {targets.fatG}g fat.
+              </p>
+            ) : (
+              <p className="measure text-lg leading-body">{targets.rationale}</p>
+            )}
+            {draft.intent !== "performance" ? (
+              <button
+                type="button"
+                className="self-start text-sm text-primary underline-offset-4 hover:underline"
+                onClick={() => setShowNumbers((v) => !v)}
+              >
+                {showNumbers ? "Hide the numbers" : "Show me the numbers"}
+              </button>
+            ) : null}
+          </div>
+        ) : (
+          <div className="flex flex-col gap-4">
+            <h1 className="font-display text-4xl tracking-display">This plan needs a tweak.</h1>
+            <p className="measure text-lg leading-body text-muted-foreground">
+              Age must be 13–100, height and weight have to be real numbers, and household size 1–12.
+              Go back and check those before we write the first week.
             </p>
-          ) : (
-            <p className="measure text-lg leading-body">{targets.rationale}</p>
-          )}
-          {draft.intent !== "performance" ? (
-            <button
-              type="button"
-              className="self-start text-sm text-primary underline-offset-4 hover:underline"
-              onClick={() => setShowNumbers((v) => !v)}
-            >
-              {showNumbers ? "Hide the numbers" : "Show me the numbers"}
-            </button>
-          ) : null}
-        </div>
+          </div>
+        )
       ) : null}
 
       <div className="flex gap-3">
@@ -158,9 +179,12 @@ export function OnboardingWizard({ initial }: { initial?: Partial<Profile> }) {
             Continue
           </Button>
         ) : (
-          <Button type="button" size="touch" onClick={() => void finish()} disabled={!parsed.success}>
-            Write my first week
-          </Button>
+          <div className="flex flex-col gap-3">
+            {finishError ? <p className="measure text-destructive">{finishError}</p> : null}
+            <Button type="button" size="touch" onClick={() => void finish()} disabled={!parsed.success}>
+              Write my first week
+            </Button>
+          </div>
         )}
       </div>
     </div>
@@ -247,32 +271,85 @@ function BodyStep({ draft, setDraft }: { draft: Draft; setDraft: (fn: (d: Draft)
       </label>
       <label className="flex flex-col gap-2 text-sm">
         Age
-        <Input className="h-11" type="number" value={draft.age} onChange={(e) => setDraft((d) => ({ ...d, age: Number(e.target.value) }))} />
+        <NumberField
+          className="h-11"
+          integer
+          value={draft.age}
+          onValueChange={(age) => {
+            if (age === null) return;
+            setDraft((d) => ({ ...d, age }));
+          }}
+        />
       </label>
       {imperial ? (
         <div className="grid grid-cols-2 gap-3">
           <label className="flex flex-col gap-2 text-sm">
             Height (ft)
-            <Input className="h-11" type="number" value={feet} onChange={(e) => setDraft((d) => ({ ...d, heightCm: imperialToCm(Number(e.target.value), inches) }))} />
+            <NumberField
+              key="height-ft"
+              className="h-11"
+              integer
+              value={feet}
+              onValueChange={(next) => {
+                if (next === null) return;
+                setDraft((d) => ({ ...d, heightCm: imperialToCm(next, inches) }));
+              }}
+            />
           </label>
           <label className="flex flex-col gap-2 text-sm">
             Height (in)
-            <Input className="h-11" type="number" value={inches} onChange={(e) => setDraft((d) => ({ ...d, heightCm: imperialToCm(feet, Number(e.target.value)) }))} />
+            <NumberField
+              key="height-in"
+              className="h-11"
+              integer
+              allowZero
+              value={inches}
+              onValueChange={(next) => {
+                if (next === null) return;
+                setDraft((d) => ({ ...d, heightCm: imperialToCm(feet, next) }));
+              }}
+            />
           </label>
           <label className="col-span-2 flex flex-col gap-2 text-sm">
             Weight (lb)
-            <Input className="h-11" type="number" value={kgToLb(draft.weightKg)} onChange={(e) => setDraft((d) => ({ ...d, weightKg: lbToKg(Number(e.target.value)) }))} />
+            <NumberField
+              key="weight-lb"
+              className="h-11"
+              integer
+              value={kgToLb(draft.weightKg)}
+              onValueChange={(next) => {
+                if (next === null) return;
+                setDraft((d) => ({ ...d, weightKg: lbToKg(next) }));
+              }}
+            />
           </label>
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-3">
           <label className="flex flex-col gap-2 text-sm">
             Height (cm)
-            <Input className="h-11" type="number" value={draft.heightCm} onChange={(e) => setDraft((d) => ({ ...d, heightCm: Number(e.target.value) }))} />
+            <NumberField
+              key="height-cm"
+              className="h-11"
+              integer
+              value={draft.heightCm}
+              onValueChange={(heightCm) => {
+                if (heightCm === null) return;
+                setDraft((d) => ({ ...d, heightCm }));
+              }}
+            />
           </label>
           <label className="flex flex-col gap-2 text-sm">
             Weight (kg)
-            <Input className="h-11" type="number" value={draft.weightKg} onChange={(e) => setDraft((d) => ({ ...d, weightKg: Number(e.target.value) }))} />
+            <NumberField
+              key="weight-kg"
+              className="h-11"
+              value={draft.weightKg}
+              onValueChange={(weightKg) => {
+                if (weightKg === null) return;
+                setDraft((d) => ({ ...d, weightKg }));
+              }}
+            />
           </label>
         </div>
       )}
@@ -459,11 +536,28 @@ function HouseholdStep({ draft, setDraft }: { draft: Draft; setDraft: (fn: (d: D
       <h1 className="font-display text-3xl tracking-display">Household and budget</h1>
       <label className="flex flex-col gap-2 text-sm">
         People at the table
-        <Input className="h-11" type="number" min={1} max={12} value={draft.householdSize} onChange={(e) => setDraft((d) => ({ ...d, householdSize: Number(e.target.value) }))} />
+        <NumberField
+          className="h-11"
+          integer
+          min={1}
+          max={12}
+          value={draft.householdSize}
+          onValueChange={(householdSize) => {
+            if (householdSize === null) return;
+            setDraft((d) => ({ ...d, householdSize }));
+          }}
+        />
       </label>
       <label className="flex flex-col gap-2 text-sm">
         Weekly grocery budget (USD, optional)
-        <Input className="h-11" type="number" value={draft.weeklyBudgetUsd} onChange={(e) => setDraft((d) => ({ ...d, weeklyBudgetUsd: Number(e.target.value) }))} />
+        <NumberField
+          className="h-11"
+          integer
+          value={draft.weeklyBudgetUsd}
+          onValueChange={(weeklyBudgetUsd) =>
+            setDraft((d) => ({ ...d, weeklyBudgetUsd: weeklyBudgetUsd ?? 0 }))
+          }
+        />
       </label>
     </div>
   );

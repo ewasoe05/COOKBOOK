@@ -96,8 +96,14 @@ export const useCookbookStore = create<Store>((set, get) => ({
   setBusy: (busy, message) =>
     set({ busy, generateMessage: message ?? get().generateMessage }),
   hydrate: async () => {
-    const snapshot = await loadSnapshot();
-    const localUpdatedAt = await loadUpdatedAt();
+    let snapshot = emptySnapshot();
+    let localUpdatedAt: string | null = null;
+    try {
+      snapshot = await loadSnapshot();
+      localUpdatedAt = await loadUpdatedAt();
+    } catch {
+      snapshot = emptySnapshot();
+    }
     let next = snapshot;
     let accountLinked = false;
 

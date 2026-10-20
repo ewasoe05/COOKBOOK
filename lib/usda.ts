@@ -8,6 +8,7 @@ import {
 import { amountToGrams, perServing, scaleNutrition, sumNutrition } from "@/lib/units";
 
 const SEARCH = "https://api.nal.usda.gov/fdc/v1/foods/search";
+const LOOKUP_TIMEOUT_MS = 8000;
 
 const NUTRIENT_IDS = {
   calories: [1008, 2048],
@@ -31,12 +32,18 @@ export const UsdaCacheSchema = z.record(z.string(), UsdaCacheEntrySchema);
 export type UsdaCacheEntry = z.infer<typeof UsdaCacheEntrySchema>;
 export type UsdaCache = z.infer<typeof UsdaCacheSchema>;
 
+const inflight = new Map<string, Promise<UsdaCacheEntry | null>>();
+
 export function cacheKey(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-function apiKey(): string {
-  return process.env.USDA_API_KEY || "DEMO_KEY";
+export function hasUsdaKey(): boolean {
+  return Boolean(process.env.USDA_API_KEY?.trim());
+}
+
+function apiKey(): string | null {
+  return process.env.USDA_API_KEY?.trim() || null;
 }
 
 function nutrientValue(
@@ -70,24 +77,33 @@ function toPer100g(food: {
 }
 
 async function searchFoods(query: string, dataType: string): Promise<UsdaCacheEntry | null> {
+  const key = apiKey();
+  if (!key) return null;
   const url = new URL(SEARCH);
-  url.searchParams.set("api_key", apiKey());
+  url.searchParams.set("api_key", key);
   url.searchParams.set("query", query);
   url.searchParams.set("pageSize", "5");
   url.searchParams.set("dataType", dataType);
-  const res = await fetch(url.toString(), { cache: "force-cache" });
-  if (!res.ok) return null;
-  const body = (await res.json()) as {
-    foods?: { fdcId: number; description?: string; foodNutrients?: { nutrientId?: number; value?: number }[] }[];
-  };
-  const food = body.foods?.[0];
-  if (!food) return null;
-  return {
-    query,
-    fdcId: food.fdcId,
-    description: food.description ?? query,
-    per100g: toPer100g(food),
-  };
+  try {
+    const res = await fetch(url.toString(), {
+      cache: "no-store",
+      signal: AbortSignal.timeout(LOOKUP_TIMEOUT_MS),
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as {
+      foods?: { fdcId: number; description?: string; foodNutrients?: { nutrientId?: number; value?: number }[] }[];
+    };
+    const food = body.foods?.[0];
+    if (!food) return null;
+    return {
+      query,
+      fdcId: food.fdcId,
+      description: food.description ?? query,
+      per100g: toPer100g(food),
+    };
+  } catch {
+    return null;
+  }
 }
 
 export async function lookupIngredient(
@@ -96,10 +112,26 @@ export async function lookupIngredient(
 ): Promise<UsdaCacheEntry | null> {
   const key = cacheKey(name);
   if (cache[key]) return cache[key];
-  const preferred = await searchFoods(name, "Foundation,SR Legacy");
-  const entry = preferred ?? (await searchFoods(name, "Branded"));
-  if (entry) cache[key] = entry;
-  return entry;
+
+  const pending = inflight.get(key);
+  if (pending) {
+    const shared = await pending;
+    if (shared) cache[key] = shared;
+    return shared;
+  }
+
+  const request = (async () => {
+    const preferred = await searchFoods(name, "Foundation,SR Legacy");
+    return preferred ?? (await searchFoods(name, "Branded"));
+  })();
+  inflight.set(key, request);
+  try {
+    const entry = await request;
+    if (entry) cache[key] = entry;
+    return entry;
+  } finally {
+    inflight.delete(key);
+  }
 }
 
 export async function verifyRecipe(
@@ -114,10 +146,16 @@ export async function verifyRecipe(
     const parts: NutritionPerServing[] = [];
     let anyMiss = false;
 
+    const lookedUp = await Promise.all(
+      working.ingredients.map(async (ingredient) => {
+        const entry = await lookupIngredient(ingredient.name, cache);
+        const grams = amountToGrams(ingredient.amount, ingredient.unit, ingredient.name);
+        return { ingredient, entry, grams };
+      }),
+    );
+
     const nextIngredients: Ingredient[] = [];
-    for (const ingredient of working.ingredients) {
-      const entry = await lookupIngredient(ingredient.name, cache);
-      const grams = amountToGrams(ingredient.amount, ingredient.unit, ingredient.name);
+    for (const { ingredient, entry, grams } of lookedUp) {
       if (!entry || grams === null) {
         anyMiss = true;
         nextIngredients.push(ingredient);

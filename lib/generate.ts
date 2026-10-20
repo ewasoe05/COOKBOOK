@@ -1,9 +1,18 @@
-import { ClaudeWeekSchema, RecipeSchema, type Profile, type Recipe, type Week } from "@/lib/schemas";
+import {
+  ClaudeDaySchema,
+  ClaudeWeekSchema,
+  RecipeSchema,
+  type Profile,
+  type Recipe,
+  type Week,
+} from "@/lib/schemas";
 import { computeTargets, mealMacroWindows } from "@/lib/nutrition";
 import { buildGroceryList } from "@/lib/grocery";
 import { verifyRecipe, type UsdaCache } from "@/lib/usda";
 import { completeJson, hasAiKey } from "@/lib/ai";
 import { z } from "zod";
+
+const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 function voice(intent: Profile["intent"]): string {
   if (intent === "performance") {
@@ -61,8 +70,55 @@ function extractJson(text: string): unknown {
   return JSON.parse(trimmed.slice(start, end + 1));
 }
 
-async function ask(system: string, user: string): Promise<string> {
-  return completeJson(system, user, 16000);
+async function ask(system: string, user: string, maxTokens = 16000, fast = false): Promise<string> {
+  return completeJson(system, user, maxTokens, { fast });
+}
+
+export function buildDayPrompt(
+  profile: Profile,
+  extras: {
+    liked: string[];
+    disliked: string[];
+    pantry: string[];
+    weekNumber: number;
+    day: number;
+    previousTitles: string[];
+  },
+): string {
+  const targets = computeTargets(profile);
+  const windows = mealMacroWindows(targets);
+  const allergies = profile.allergies.length ? profile.allergies.join(", ") : "none";
+  const dayName = DAY_NAMES[extras.day] ?? `day ${extras.day}`;
+  return [
+    `Create ONLY ${dayName} (day ${extras.day} of 0-6) for Week ${extras.weekNumber} as JSON only. No markdown fences.`,
+    "Write breakfast, lunch, dinner, and snack for this one day. Do not write other days.",
+    extras.day === 0 ? "Also include summary: two sentences introducing the whole week." : "Do not include a week summary.",
+    `Profile: ${JSON.stringify(profile)}`,
+    `Computed targets: ${JSON.stringify(targets)}`,
+    `Per-meal calorie windows (±12%): ${JSON.stringify(windows)}`,
+    `This day's meals must sum to within ±5% of the daily calorie target (${targets.calories} kcal).`,
+    `ALLERGIES ARE AN ABSOLUTE PROHIBITION AND MUST NEVER APPEAR IN ANY INGREDIENT: ${allergies}.`,
+    `Restated: do not use these allergens in any amount, garnish, oil, or sauce: ${allergies}.`,
+    `Dislikes: ${profile.dislikes.join(", ") || "none"}`,
+    `Liked cuisines: ${profile.likedCuisines.join(", ") || "any"}`,
+    `Spice: ${profile.spice}. Max cook minutes per meal: ${profile.maxCookMinutes}. cookMinutes MUST be <= ${profile.maxCookMinutes}. Skill: ${profile.skill}.`,
+    `Use ONLY this equipment: ${profile.equipment.join(", ") || "stovetop"}.`,
+    profile.weeklyBudgetUsd ? `Rough weekly grocery budget: $${profile.weeklyBudgetUsd}.` : "",
+    `Servings default to householdSize ${profile.householdSize}.`,
+    voice(profile.intent),
+    extras.liked.length ? `Lean toward meals like: ${extras.liked.join("; ")}` : "",
+    extras.disliked.length ? `Avoid meals like: ${extras.disliked.join("; ")}` : "",
+    extras.previousTitles.length
+      ? `Already written this week, do not repeat these titles: ${extras.previousTitles.join("; ")}`
+      : "",
+    extras.pantry.length ? `Pantry already has: ${extras.pantry.join(", ")}` : "",
+    "Each recipe needs: title, emoji (a single food emoji), mealType, servings, prepMinutes, cookMinutes, costEstimateUsd, cuisine, ingredients[{name,amount,unit}], steps[{title,text,timerSeconds?}], nutritionPerServing{calories,proteinG,carbsG,fatG,fiberG,sodiumMg,addedSugarG}, nutritionSource 'ai_estimate', whyThisFitsYou, tags.",
+    "Repeat ingredient quantities inside step text.",
+    "Assign stable recipe ids like d0-breakfast. meals[].recipeId must match those ids.",
+    'Return shape: { "summary"?: string, "recipes": Recipe[], "meals": [{ "mealType": "breakfast"|"lunch"|"dinner"|"snack", "recipeId": string }] }',
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 export async function generateWeekFromClaude(
@@ -148,6 +204,84 @@ export async function generateWeekFromClaude(
   return { week, recipes, usdaCache: cache };
 }
 
+export async function generateDayFromClaude(
+  profile: Profile,
+  extras: {
+    liked: string[];
+    disliked: string[];
+    pantry: string[];
+    weekNumber: number;
+    day: number;
+    weekId: string;
+    previousTitles: string[];
+    usdaCache?: UsdaCache;
+  },
+): Promise<{
+  recipes: Recipe[];
+  day: Week["days"][number];
+  summary?: string;
+  usdaCache: UsdaCache;
+}> {
+  if (!hasAiKey()) {
+    throw new Error("AI is not configured on the server");
+  }
+  const system = "You are a professional cookbook author. Output valid JSON only.";
+  let raw = await ask(system, buildDayPrompt(profile, extras), 5000, true);
+  let parsed = ClaudeDaySchema.safeParse(extractJson(raw));
+  if (!parsed.success) {
+    raw = await ask(
+      system,
+      `Your previous JSON failed validation. Fix these issues and return JSON only:\n${parsed.error.message}\n\nPrevious output:\n${raw}`,
+      5000,
+      true,
+    );
+    parsed = ClaudeDaySchema.safeParse(extractJson(raw));
+    if (!parsed.success) {
+      throw new Error(`Day JSON invalid after repair: ${parsed.error.message}`);
+    }
+  }
+
+  const now = new Date().toISOString();
+  const idMap = new Map<string, string>();
+  const recipes: Recipe[] = [];
+  const cache: UsdaCache = { ...(extras.usdaCache ?? {}) };
+
+  for (const draft of parsed.data.recipes) {
+    const newId = crypto.randomUUID();
+    idMap.set(draft.id, newId);
+    const recipe: Recipe = RecipeSchema.parse({
+      ...draft,
+      id: newId,
+      weekId: extras.weekId,
+      createdAt: now,
+      madeCount: 0,
+      makeAgain: false,
+      cookMinutes: Math.min(draft.cookMinutes, profile.maxCookMinutes),
+      servings: draft.servings || profile.householdSize,
+      nutritionSource: "ai_estimate",
+    });
+    if (profile.allergies.some((allergy) => allergenInRecipe(recipe, allergy))) {
+      throw new Error(`Generated recipe "${recipe.title}" contains allergen "${profile.allergies.join(", ")}"`);
+    }
+    recipes.push(recipe);
+  }
+
+  const day = {
+    day: extras.day as Week["days"][number]["day"],
+    meals: parsed.data.meals.map((meal) => ({
+      ...meal,
+      recipeId: idMap.get(meal.recipeId) ?? meal.recipeId,
+    })),
+  };
+
+  return {
+    recipes,
+    day,
+    summary: parsed.data.summary,
+    usdaCache: cache,
+  };
+}
+
 const SingleRecipeSchema = RecipeSchema.omit({
   id: true,
   weekId: true,
@@ -182,12 +316,14 @@ export async function regenerateMealFromClaude(input: {
     voice(input.profile.intent),
     `JSON only: a single recipe object matching the recipe schema fields (title, emoji, mealType "${input.mealType}", servings, prepMinutes, cookMinutes, costEstimateUsd, cuisine, ingredients, steps, nutritionPerServing, nutritionSource, whyThisFitsYou, tags).`,
   ].join("\n");
-  let raw = await ask("You are a professional cookbook author. Output valid JSON only.", user);
+  let raw = await ask("You are a professional cookbook author. Output valid JSON only.", user, 4000, true);
   let parsed = SingleRecipeSchema.safeParse(extractJson(raw));
   if (!parsed.success) {
     raw = await ask(
       "You are a professional cookbook author. Output valid JSON only.",
       `Fix validation errors and return one recipe JSON:\n${parsed.error.message}\n\n${raw}`,
+      4000,
+      true,
     );
     parsed = SingleRecipeSchema.safeParse(extractJson(raw));
     if (!parsed.success) throw new Error(parsed.error.message);

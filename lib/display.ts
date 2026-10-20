@@ -10,7 +10,15 @@ export function imperialToCm(feet: number, inches: number): number {
 }
 
 export function kgToLb(kg: number): number {
-  return Math.round(kg * 2.20462 * 10) / 10;
+  return Math.round(kg * 2.20462);
+}
+
+export function parseNumberField(raw: string): number | null {
+  const trimmed = raw.trim();
+  if (trimmed === "" || trimmed === ".") return null;
+  const value = Number(trimmed);
+  if (!Number.isFinite(value)) return null;
+  return value;
 }
 
 export function lbToKg(lb: number): number {
